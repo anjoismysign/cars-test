@@ -14,8 +14,6 @@ import org.bukkit.event.vehicle.VehicleUpdateEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
-import javax.annotation.Nullable;
-
 public final class CarsTest extends JavaPlugin implements Listener {
 
     private static final double FORWARD_SPEED = 150;
@@ -33,7 +31,7 @@ public final class CarsTest extends JavaPlugin implements Listener {
             return;
         }
 
-        @Nullable Entity passenger = minecart.getPassengers().isEmpty() ? null : minecart.getPassengers().getFirst();
+        Entity passenger = minecart.getPassengers().isEmpty() ? null : minecart.getPassengers().getFirst();
 
         if (passenger == null){
             return;
