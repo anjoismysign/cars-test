@@ -19,17 +19,13 @@ public final class CarsTest extends JavaPlugin implements Listener {
     private static final double FORWARD_SPEED = 150;
     private static final double MAX_SPEED = 1_000;
 
-    /**
-     * Car drive update event.
-     * The Car's speed and direction is calculated.
-     *
-     * @param event {@link VehicleUpdateEvent}
-     */
     @EventHandler
     public void onVehicleUpdate(VehicleUpdateEvent event) {
-        if (!(event.getVehicle() instanceof Minecart minecart)) {
+        Vehicle vehicle = event.getVehicle();
+        if (vehicle.getType() != EntityType.MINECART){
             return;
         }
+        Minecart minecart = (Minecart) vehicle;
 
         Entity passenger = minecart.getPassengers().isEmpty() ? null : minecart.getPassengers().getFirst();
 
