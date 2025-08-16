@@ -1,0 +1,4 @@
+name: cars-test
+version: 1.0
+main: io.github.anjoismysign.carsTest.CarsTest
+api-version: 1.21
