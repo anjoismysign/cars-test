@@ -1,71 +1,135 @@
 package io.github.anjoismysign.carsTest;
 
+import io.papermc.paper.entity.TeleportFlag;
 import org.bukkit.Bukkit;
 import org.bukkit.Input;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Minecart;
+import org.bukkit.entity.Interaction;
+import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Vehicle;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.vehicle.VehicleEnterEvent;
-import org.bukkit.event.vehicle.VehicleUpdateEvent;
+import org.bukkit.event.player.PlayerToggleSneakEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
+
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 public final class CarsTest extends JavaPlugin implements Listener {
 
-    private static final double FORWARD_SPEED = 150;
-    private static final double MAX_SPEED = 1_000;
+    private static final float VEHICLE_HEIGHT = 1.2f;
+    private static final float VEHICLE_WIDTH = 0.6f;
+    private static final double VEHICLE_Y_MODIFIER = -0.25;
 
-    @EventHandler
-    public void onVehicleUpdate(VehicleUpdateEvent event) {
-        Vehicle vehicle = event.getVehicle();
-        if (vehicle.getType() != EntityType.MINECART){
-            return;
-        }
-        Minecart minecart = (Minecart) vehicle;
+    private final Map<UUID, FlyingVehicle> vehicles = new HashMap<>();
 
-        Entity passenger = minecart.getPassengers().isEmpty() ? null : minecart.getPassengers().getFirst();
+    private record FlyingVehicle(Display seat) {
 
-        if (passenger == null){
-            return;
-        }
-        if (passenger.getType() != EntityType.PLAYER){
-            return;
+        public void remove() {
+            seat.remove();
         }
 
-        Player player = (Player) passenger;
-
-        Vector vehicleVelocity = minecart.getVelocity();
-        Vector direction = player.getLocation().getDirection();
-        direction.setY(0);
-        direction.normalize();
-
-        Input input = player.getCurrentInput();
-        if (!input.isForward()){
-            return;
+        public void destroy(){
+            World world = seat().getWorld();
+            Location location = seat().getLocation();
+            remove();
+            world.spawnParticle(Particle.EXPLOSION, location, 1);
+            world.playSound(location, Sound.ENTITY_GENERIC_EXPLODE, 1, 1);
         }
 
-        Vector newVelocity = direction.clone().multiply(FORWARD_SPEED / 100.0);
-        newVelocity.setY(vehicleVelocity.getY());
-        minecart.setVelocity(newVelocity);
+        public static FlyingVehicle of(Player player) {
+            World world = player.getWorld();
+            Location location = player.getLocation();
+            ItemDisplay seat = (ItemDisplay) world.spawnEntity(location, EntityType.ITEM_DISPLAY);
+            seat.setItemStack(new ItemStack(Material.PLAYER_HEAD));
+            seat.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
+            seat.setRotation(player.getYaw(), 0);
+            seat.setTeleportDuration(1);
+            seat.addPassenger(player);
+            return new FlyingVehicle(seat);
+        }
     }
 
     @EventHandler
-    public void onVehicleEnter(VehicleEnterEvent event){
-        Vehicle vehicle = event.getVehicle();
-        if (vehicle.getType() != EntityType.MINECART){
+    public void onSneak(PlayerToggleSneakEvent event) {
+        if (event.isSneaking()) {
             return;
         }
-        Minecart minecart = (Minecart) vehicle;
-        minecart.setMaxSpeed(MAX_SPEED);
+        Player player = event.getPlayer();
+        FlyingVehicle vehicle = FlyingVehicle.of(player);
+        vehicles.put(vehicle.seat().getUniqueId(), vehicle);
     }
 
     @Override
     public void onEnable() {
         Bukkit.getPluginManager().registerEvents(this, this);
+        Bukkit.getScheduler().runTaskTimer(this, () -> {
+            Iterator<Map.Entry<UUID, FlyingVehicle>> it = vehicles.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<UUID, FlyingVehicle> entry = it.next();
+                FlyingVehicle flyingVehicle = entry.getValue();
+                Display seat = flyingVehicle.seat;
+                List<Entity> passengers = seat.getPassengers();
+                if (passengers.isEmpty()) {
+                    return;
+                }
+                Entity entity = passengers.getFirst();
+                if (entity.getType() != EntityType.PLAYER) {
+                    return;
+                }
+                Player player = (Player) entity;
+                Input input = player.getCurrentInput();
+                if (!input.isForward()) {
+                    return;
+                }
+
+                World world = player.getWorld();
+                BoundingBox boxBox = flyingVehicle.seat().getBoundingBox();
+                Location boxLocation = boxBox.getCenter().setY(boxBox.getMinY()).toLocation(world).add(0,VEHICLE_Y_MODIFIER,0);
+
+                Location playerLocation = player.getLocation();
+                float yaw = playerLocation.getYaw();
+                Vector direction = playerLocation.getDirection();
+                direction.normalize();
+                Vector at = direction.clone().multiply(200 / 100.0);
+                Location location = flyingVehicle.seat().getLocation();
+                location.add(at);
+                Block block = boxLocation.getBlock();
+                Material type = block.getType();
+                if (
+                        type.isSolid() ||
+                        type == Material.WATER ||
+                        type == Material.LAVA ||
+                        !world.getWorldBorder().isInside(location)
+                ){
+                    it.remove();
+                    flyingVehicle.destroy();
+                    return;
+                }
+                location.setYaw(yaw);
+                flyingVehicle.seat().teleport(location, TeleportFlag.EntityState.RETAIN_PASSENGERS);
+            }
+        }, 0, 1);
+    }
+
+
+    @Override
+    public void onDisable() {
+        vehicles.values().forEach(FlyingVehicle::remove);
     }
 
 }
